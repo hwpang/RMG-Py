@@ -243,7 +243,7 @@ cdef class ReactionSystem(DASx):
         self.generate_species_indices(core_species, edge_species)
         self.generate_reaction_indices(core_reactions, edge_reactions)
         self.generate_reactant_product_indices(core_reactions, edge_reactions)
-
+ 
         self.core_species_concentrations = np.zeros((self.num_core_species), np.float64)
         self.core_species_production_rates = np.zeros((self.num_core_species), np.float64)
         self.core_species_consumption_rates = np.zeros((self.num_core_species), np.float64)
