@@ -66,8 +66,11 @@ cdef class LiquidReactor(ReactionSystem):
     cdef public double residence_time # for cstr
     cdef public double v_in # for semi-batch
     cdef public double V_0 # for semi-batch
+    cdef public double P_vap, specific_area
+    cdef public bint evaporation
+    cdef public dict vapor_mole_fractions # vapor phase mole fractions
 
-    def __init__(self, T, initial_concentrations, residence_time=None, v_in=None, inlet_concentrations=None, V_0=None, n_sims=1, termination=None, sensitive_species=None,
+    def __init__(self, T, initial_concentrations, P_vap=None, specific_area=None, vapor_mole_fractions=None, residence_time=None, v_in=None, inlet_concentrations=None, V_0=None, n_sims=1, termination=None, sensitive_species=None,
                  sensitivity_threshold=1e-3, sens_conditions=None, const_spc_names=None):
 
         ReactionSystem.__init__(self, termination, sensitive_species, sensitivity_threshold)
@@ -86,6 +89,16 @@ cdef class LiquidReactor(ReactionSystem):
         self.v_in = -1.0
         self.V_0 = -1.0
         self.inlet_concentrations = {}
+        self.P_vap=-1.0
+        self.specific_area=-1.0
+        self.vapor_mole_fractions={}
+
+        #evaporation and condensation from vapor phase
+        if P_vap and specific_area and vapor_mole_fractions:
+            self.P_vap = P_vap
+            self.specific_area = specific_area
+            self.vapor_mole_fractions = vapor_mole_fractions
+            self.evaporation = True
         
         # CSTR
         if residence_time:
@@ -122,6 +135,12 @@ cdef class LiquidReactor(ReactionSystem):
             for label, conc in self.inlet_concentrations.items():
                 inlet_concentrations[species_dict[label]] = conc
             self.inlet_concentrations = inlet_concentrations
+
+        vapor_mole_fractions = {}
+        if self.vapor_mole_fractions:
+            for label, mol_frac in self.vapor_mole_fractions.items():
+                vapor_mole_fractions[species_dict[label]] = mol_frac
+            self.vapor_mole_fractions = vapor_mole_fractions
 
         conditions = {}
         if self.sens_conditions is not None:
@@ -173,6 +192,9 @@ cdef class LiquidReactor(ReactionSystem):
         # Generate forward and reverse rate coefficients k(T,P)
         self.generate_rate_coefficients(core_reactions, edge_reactions)
 
+        if self.evaporation:
+            self.generate_evaporation_coefficients(core_species)
+
         ReactionSystem.compute_network_variables(self, pdep_networks)
 
         ReactionSystem.set_initial_derivative(self)
@@ -193,6 +215,94 @@ cdef class LiquidReactor(ReactionSystem):
             if rxn.reversible:
                 self.Keq[j] = rxn.get_equilibrium_constant(self.T.value_si)
                 self.kb[j] = self.kf[j] / self.Keq[j]
+
+    def generate_evaporation_coefficients(self, core_species):
+        """
+        Populates the self.Mw and self.P_sat to compute evaporation rate
+        """
+
+        for spec in core_species:
+            i = self.get_species_index(spec)
+
+            # dH_vap will be spec.get_enthalpy_of_vaporization() and Tb will be spec.get_boiling_point once the the GAV database is done
+            if spec.molecular_weight.value < 31: #ethylene
+                dH_vap = 14.0 * 1000.0
+                Tb = 169.1
+            elif spec.molecular_weight.value < 45: #propane
+                dH_vap = 16.04 * 1000.0
+                Tb = 225.6
+            elif spec.molecular_weight.value < 59: #butadiene
+                dH_vap = 21.47 * 1000.0
+                Tb = 268.6
+            elif spec.molecular_weight.value < 73: #cyclopentadiene
+                dH_vap = 29.0 * 1000.0
+                Tb = 314
+            elif spec.molecular_weight.value < 87: #cyclohexadiene
+                dH_vap = 33.17 * 1000.0
+                Tb = 354.0
+            elif spec.molecular_weight.value < 101: #toluene
+                dH_vap = 37.0 * 1000.0
+                Tb = 383.8
+            elif spec.molecular_weight.value < 115: #styrene
+                dH_vap = 43.5 * 1000.0
+                Tb = 419.0
+            elif spec.molecular_weight.value < 129: #indene
+                dH_vap = 50.6 * 1000.0
+                Tb = 454.0
+            elif spec.molecular_weight.value < 143:
+                dH_vap = 56.6 * 1000.0
+                Tb = 490.0
+            elif spec.molecular_weight.value < 158:
+                dH_vap = 56.4 * 1000.0
+                Tb = 468.0
+            elif spec.molecular_weight.value < 171:
+                dH_vap = 61.1 * 1000.0
+                Tb = 489.0
+            elif spec.molecular_weight.value < 185:
+                dH_vap = 66.5 * 1000.0
+                Tb = 507.
+            elif spec.molecular_weight.value < 199:
+                dH_vap = 71.6 * 1000.0
+                Tb = 523.
+            elif spec.molecular_weight.value < 213:
+                dH_vap = 76.1 * 1000.0
+                Tb = 540.
+            elif spec.molecular_weight.value < 227:
+                dH_vap = 81.3 * 1000.0
+                Tb = 554.
+            elif spec.molecular_weight.value < 241:
+                dH_vap = 86.0 * 1000.0
+                Tb = 575.
+            elif spec.molecular_weight.value < 255:
+                dH_vap = 92. * 1000.0
+                Tb = 585.65
+            elif spec.molecular_weight.value < 269:
+                dH_vap = 96.4 * 1000.0
+                Tb = 602.
+            elif spec.molecular_weight.value < 283:
+                dH_vap = 102. * 1000.0
+                Tb = 616.2
+            elif spec.molecular_weight.value < 297:
+                dH_vap = 106.8 * 1000.0
+                Tb = 629.7
+            elif spec.molecular_weight.value < 311:
+                dH_vap = 111.9 * 1000.0
+                Tb = 641.8
+            elif spec.molecular_weight.value < 325:
+                dH_vap = 117. * 1000.
+                Tb = 653.2
+            elif spec.molecular_weight.value < 339:
+                dH_vap = 121.9 * 1000.
+                Tb = 664.5
+            elif spec.molecular_weight.value < 353:
+                dH_vap = 126.8 * 1000.
+                Tb = 675.1 
+            else:
+                dH_vap = 500. * 1000.0 #J/mol
+                Tb = 1000 #K
+
+            self.P_sat[i] = 101325.0 * np.exp(- dH_vap / constants.R * (1 / self.T.value_si - 1 / Tb))
+            self.Mw[i] = spec.molecular_weight.value
 
     def get_threshold_rate_constants(self, model_settings):
         """
@@ -244,6 +354,12 @@ cdef class LiquidReactor(ReactionSystem):
                 self.inlet_species_concentrations[i] = conc
             self.num_inlet_species = len(self.inlet_species_concentrations)            
 
+        if self.evaporation:
+            for spec, mol_frac in self.vapor_mole_fractions.items():
+                i = self.get_species_index(spec)
+                self.vapor_species_mole_fractions[i] = mol_frac
+            self.num_vapor_species = len(self.vapor_species_mole_fractions)
+
         if not self.constant_volume:
             V = self.V_0
         else:
@@ -272,6 +388,7 @@ cdef class LiquidReactor(ReactionSystem):
         cdef np.ndarray[np.float64_t,ndim=1] core_species_consumption_rates, core_species_production_rates
         cdef np.ndarray[np.float64_t, ndim=1] C, C_in
         cdef np.ndarray[np.float64_t, ndim=2] jacobian, dgdk
+        cdef np.ndarray[np.float64_t, ndim=1] Mw, P_sat 
 
         ir = self.reactant_indices
         ip = self.product_indices
@@ -316,6 +433,9 @@ cdef class LiquidReactor(ReactionSystem):
         if (self.residence_time != -1.0) or (not self.constant_volume):
             for j in range(self.num_inlet_species):
                 C_in[j] = self.inlet_species_concentrations[j]
+
+        if self.evaporation:
+            net_evaporation_fluxes = - self.specific_area * V * np.sqrt(2 / (np.pi * constants.R * self.Mw)) * (self.P_vap * self.vapor_species_mole_fractions/np.sqrt(self.T.value_si) - C/sum(C) * self.P_sat/np.sqrt(self.T.value_si))
 
         for j in range(ir.shape[0]):
             k = kf[j]
@@ -434,6 +554,9 @@ cdef class LiquidReactor(ReactionSystem):
             res = self.v_in * C_in + core_species_rates * V
         else:
             res = core_species_rates * V
+
+        if self.evaporation:
+            res -= net_evaporation_fluxes
 
         if self.sensitivity:
             delta = np.zeros(len(y), np.float64)
@@ -820,6 +943,8 @@ cdef class LiquidReactor(ReactionSystem):
         if self.residence_time != -1.0:
             pd -= 1/self.residence_time * np.identity(num_core_species, np.float64)
 
+        if self.evaporation:
+            pd -= self.specific_area * self.V * np.sqrt(2 / (np.pi * constants.R * self.Mw)) * self.P_sat * (sum(C) - C) / (sum(C) * sum(C)) / np.sqrt(self.T.value_si) * np.identity(num_core_species, np.float64)
         self.jacobian_matrix = pd + cj * np.identity(num_core_species, np.float64)
 
         return pd
