@@ -44,6 +44,7 @@ cdef class ReactionSystem(DASx):
 
     #  variables that determine the dimensions of arrays and matrices:
     cdef public int num_inlet_species
+    cdef public int num_vapor_species
     cdef public int num_core_species
     cdef public int num_core_reactions
     cdef public int num_edge_species
@@ -64,9 +65,11 @@ cdef class ReactionSystem(DASx):
     cdef public np.ndarray Keq  # equilibrium constants
     cdef public np.ndarray network_leak_coefficients
     cdef public np.ndarray jacobian_matrix
+    cdef public np.ndarray P_sat, Mw
 
     cdef public np.ndarray core_species_concentrations
     cdef public np.ndarray inlet_species_concentrations
+    cdef public np.ndarray vapor_species_mole_fractions
     
     #surface information
     cdef public np.ndarray surface_species_indices
