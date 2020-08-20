@@ -330,6 +330,9 @@ def liquid_reactor(temperature,
                    inletVolumetricFlowRate=None,
                    inletConcentrations=None,
                    initialVolume=None,
+                   vaporPressure=None,
+                   interfacialMassTransferParameter=None,
+                   vaporMoleFractions=None,
                    terminationConversion=None,
                    nSims=4,
                    terminationTime=None,
@@ -398,6 +401,29 @@ def liquid_reactor(temperature,
                 concentration = Quantity(conc)
                 inletConcentrations[spec] = concentration.value_si
 
+    if vaporPressure or interfacialMassTransferParameter or vaporMoleFractions:
+        #Check input combinations
+        if not (vaporPressure and interfacialMassTransferParameter and vaporMoleFractions):
+            raise InputError('vaporPressure, interfacialMassTransferParameter, and vaporMoleFractions must be specified together for include evaporation.')
+        else:
+            if len(vaporPressure) != 2:
+                raise InputError("Vapor pressure value must be in the form of (number, units).")
+            vaporPressure = Quantity(vaporPressure).value_si
+            sum_vapor_mole_fractions = sum(vaporMoleFractions.values())
+            if sum_vapor_mole_fractions != 1:
+                logging.warning('Vapor mole fractions do not sum to one; normalizing.')
+                logging.info('')
+                logging.info('Original composition:')
+                for spec, mol_frac in vaporMoleFractions.items():
+                    logging.info(f'{spec} = {mol_frac}')
+                for spec in vaporMoleFractions:
+                    vaporMoleFractions[spec] /= sum_vapor_mole_fractions
+                logging.info('')
+                logging.info('Normalized mole fractions:')
+                for spec, mol_frac in vaporMoleFractions.items():
+                    logging.info(f'{spec} = {mol_frac}')
+                logging.info('')
+
     if not isinstance(temperature, list) and all([not isinstance(x, list) for x in initialConcentrations.values()]):
         nSims = 1
 
@@ -439,7 +465,7 @@ def liquid_reactor(temperature,
         sens_conditions = sensitivityConcentrations
         sens_conditions['T'] = Quantity(sensitivityTemperature).value_si
 
-    system = LiquidReactor(T, initialConcentrations, residenceTime, inletVolumetricFlowRate, inletConcentrations, initialVolume, nSims, termination, sensitive_species, sensitivityThreshold,
+    system = LiquidReactor(T, initialConcentrations, vaporPressure, interfacialMassTransferParameter, vaporMoleFractions, residenceTime, inletVolumetricFlowRate, inletConcentrations, initialVolume, nSims, termination, sensitive_species, sensitivityThreshold,
                            sens_conditions, constantSpecies)
     rmg.reaction_systems.append(system)
 
