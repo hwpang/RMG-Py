@@ -151,6 +151,10 @@ class DiffusionLimited(object):
 
         return k_diff
 
+    def get_diffusion_coefficient(self, T, spec):
+        solute_data = self.database.get_solute_data(spec)
+        return solute_data.get_stokes_diffusivity(T, self.get_solvent_viscosity(T))
+
 
 # module level variable. There should only ever be one. It starts off disabled
 diffusion_limiter = DiffusionLimited()

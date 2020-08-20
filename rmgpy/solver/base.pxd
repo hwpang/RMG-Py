@@ -50,6 +50,7 @@ cdef class ReactionSystem(DASx):
     cdef public int num_edge_reactions
     cdef public int num_pdep_networks
     cdef public int neq
+    cdef public int num_vapor_species
 
     # variables that store stoichiometry data
     cdef public dict species_index
@@ -67,9 +68,11 @@ cdef class ReactionSystem(DASx):
     cdef public np.ndarray mw
     cdef public np.ndarray mww #molecular weight based weights of species
     cdef public np.ndarray mww_network #molecular weight based weights of pdep networks
+    cdef public np.ndarray kLA
 
     cdef public np.ndarray core_species_concentrations
     cdef public np.ndarray inlet_species_concentrations
+    cdef public np.ndarray vapor_species_mole_fractions
     
     #surface information
     cdef public np.ndarray surface_species_indices

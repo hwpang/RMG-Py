@@ -66,8 +66,11 @@ cdef class LiquidReactor(ReactionSystem):
     cdef public double residence_time # for cstr
     cdef public double v_in # for semi-batch
     cdef public double V_0 # for semi-batch
+    cdef public double P_vap, interfacial_mass_transfer_param
+    cdef public dict vapor_mole_fractions # vapor phase mole fractions
+    cdef public bint interfacial_mass_transfer
 
-    def __init__(self, T, initial_concentrations, residence_time=None, v_in=None, inlet_concentrations=None, V_0=None, n_sims=1, termination=None, sensitive_species=None,
+    def __init__(self, T, initial_concentrations, P_vap=None, interfacial_mass_transfer_param=None, vapor_mole_fractions=None, residence_time=None, v_in=None, inlet_concentrations=None, V_0=None, n_sims=1, termination=None, sensitive_species=None,
                  sensitivity_threshold=1e-3, sens_conditions=None, const_spc_names=None):
 
         ReactionSystem.__init__(self, termination, sensitive_species, sensitivity_threshold)
@@ -86,6 +89,16 @@ cdef class LiquidReactor(ReactionSystem):
         self.v_in = -1.0
         self.V_0 = -1.0
         self.inlet_concentrations = {}
+        self.P_vap=-1.0
+        self.vapor_mole_fractions={}
+        self.interfacial_mass_transfer = False
+
+        #interfacial_mass_transfer and condensation from vapor phase
+        if P_vap and interfacial_mass_transfer_param and vapor_mole_fractions:
+            self.P_vap = P_vap
+            self.interfacial_mass_transfer_param = interfacial_mass_transfer_param
+            self.vapor_mole_fractions = vapor_mole_fractions
+            self.interfacial_mass_transfer = True
         
         # CSTR
         if residence_time:
@@ -122,6 +135,12 @@ cdef class LiquidReactor(ReactionSystem):
             for label, conc in self.inlet_concentrations.items():
                 inlet_concentrations[species_dict[label]] = conc
             self.inlet_concentrations = inlet_concentrations
+
+        vapor_mole_fractions = {}
+        if self.vapor_mole_fractions:
+            for label, mol_frac in self.vapor_mole_fractions.items():
+                vapor_mole_fractions[species_dict[label]] = mol_frac
+            self.vapor_mole_fractions = vapor_mole_fractions
 
         conditions = {}
         if self.sens_conditions is not None:
@@ -172,6 +191,7 @@ cdef class LiquidReactor(ReactionSystem):
 
         # Generate forward and reverse rate coefficients k(T,P)
         self.generate_rate_coefficients(core_reactions, edge_reactions)
+        self.generate_mass_transfer_coefficients(core_species)
 
         ReactionSystem.compute_network_variables(self, pdep_networks)
 
@@ -193,6 +213,15 @@ cdef class LiquidReactor(ReactionSystem):
             if rxn.reversible:
                 self.Keq[j] = rxn.get_equilibrium_constant(self.T.value_si)
                 self.kb[j] = self.kf[j] / self.Keq[j]
+
+    def generate_mass_transfer_coefficients(self, core_species):
+        """
+        Populates the self.DL to compute interfacial_mass_transfer rate
+        """
+
+        for spec in core_species:
+            i = self.get_species_index(spec)
+            self.kLA[i] = self.interfacial_mass_transfer_param * np.sqrt(spec.get_diffusion_coefficient(self.T.value_si))
 
     def get_threshold_rate_constants(self, model_settings):
         """
@@ -244,6 +273,12 @@ cdef class LiquidReactor(ReactionSystem):
                 self.inlet_species_concentrations[i] = conc
             self.num_inlet_species = len(self.inlet_species_concentrations)            
 
+        if self.interfacial_mass_transfer:
+            for spec, mol_frac in self.vapor_mole_fractions.items():
+                i = self.get_species_index(spec)
+                self.vapor_species_mole_fractions[i] = mol_frac
+            self.num_vapor_species = len(self.vapor_species_mole_fractions)
+
         if not self.constant_volume:
             V = self.V_0
         else:
@@ -272,6 +307,7 @@ cdef class LiquidReactor(ReactionSystem):
         cdef np.ndarray[np.float64_t,ndim=1] core_species_consumption_rates, core_species_production_rates
         cdef np.ndarray[np.float64_t, ndim=1] C, C_in
         cdef np.ndarray[np.float64_t, ndim=2] jacobian, dgdk
+        cdef np.ndarray[np.float64_t, ndim=1] DL
 
         ir = self.reactant_indices
         ip = self.product_indices
@@ -316,6 +352,9 @@ cdef class LiquidReactor(ReactionSystem):
         if (self.residence_time != -1.0) or (not self.constant_volume):
             for j in range(self.num_inlet_species):
                 C_in[j] = self.inlet_species_concentrations[j]
+
+        if self.interfacial_mass_transfer:
+            net_interfacial_mass_transfer_fluxes = self.kLA*(C-self.P_vap/(constants.R*self.T.value_si)*self.vapor_species_mole_fractions)
 
         for j in range(ir.shape[0]):
             k = kf[j]
@@ -434,6 +473,9 @@ cdef class LiquidReactor(ReactionSystem):
             res = self.v_in * C_in + core_species_rates * V
         else:
             res = core_species_rates * V
+
+        if self.interfacial_mass_transfer:
+            res -= net_interfacial_mass_transfer_fluxes * V
 
         if self.sensitivity:
             delta = np.zeros(len(y), np.float64)
@@ -820,6 +862,8 @@ cdef class LiquidReactor(ReactionSystem):
         if self.residence_time != -1.0:
             pd -= 1/self.residence_time * np.identity(num_core_species, np.float64)
 
+        if self.interfacial_mass_transfer:
+            pd -= self.kLA * np.identity(num_core_species, np.float64)
         self.jacobian_matrix = pd + cj * np.identity(num_core_species, np.float64)
 
         return pd

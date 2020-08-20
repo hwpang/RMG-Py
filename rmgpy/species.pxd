@@ -102,6 +102,8 @@ cdef class Species:
     cpdef Species copy(self, bint deep=?)
 
     cpdef set_structure(self, str structure)
+
+    cpdef double get_diffusion_coefficient(self, double T) except -1
     
 ################################################################################
 
