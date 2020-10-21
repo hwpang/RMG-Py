@@ -55,6 +55,7 @@ from rmgpy.molecule.molecule import Atom, Bond, Molecule
 from rmgpy.pdep import SingleExponentialDown
 from rmgpy.statmech.conformer import Conformer
 from rmgpy.thermo import Wilhoit, NASA, ThermoData
+from rmgpy.kinetics.diffusionLimited import diffusion_limiter
 
 #: This dictionary is used to add multiplicity to species label
 _multiplicity_labels = {1: 'S', 2: 'D', 3: 'T', 4: 'Q', 5: 'V', }
@@ -838,6 +839,24 @@ class Species(object):
                                   "interpret it as SMILES nor as adjacency list".format(structure, self.label))
                     raise
             self.generate_resonance_structures()
+
+    def get_diffusion_coefficient(self, T):
+        """
+        Calculate and return the diffusion coefficient
+        """
+        if diffusion_limiter.enabled:
+            return diffusion_limiter.get_diffusion_coefficient(T, self)
+        else:
+            raise Exception('Unable to calculate diffusion coefficient when the diffusion limiter isn\'t enabled.')
+
+    def get_henry_law_constant(self, T):
+        """
+        Calculate and return the henry law constant
+        """
+        if diffusion_limiter.enabled:
+            return diffusion_limiter.get_henry_law_constant(T, self)
+        else:
+            raise Exception('Unable to calculate henry law constant when the diffusion limiter isn\'t enabled.')
 
 
 ################################################################################
