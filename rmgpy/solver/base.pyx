@@ -618,10 +618,10 @@ cdef class ReactionSystem(DASx):
         cdef object max_species, max_network
         cdef int i, j, k
         cdef np.float64_t conversion
-        cdef np.ndarray[np.float64_t, ndim=1] surface_species_production, surface_species_consumption, branching_nums
+        cdef np.ndarray[np.float64_t, ndim=1] surface_species_production, surface_species_consumption, branching_nums, edge_radical_consumption, edge_radical_production
         cdef np.ndarray[np.float64_t, ndim=1] surface_total_div_accum_nums, surface_species_rate_ratios
         cdef np.ndarray[np.float64_t, ndim=1] forward_rate_coefficients, core_species_concentrations 
-        cdef double prev_time, total_moles, c, volume, RTP, max_char_rate, br, rr
+        cdef double prev_time, total_moles, c, volume, RTP, max_char_rate, br, rr, overall_core_radical_production, overall_core_radical_consumption, tol_overall_branch_rxn_to_core
         cdef double unimolecular_threshold_val, bimolecular_threshold_val, trimolecular_threshold_val
         cdef bool useDynamicsTemp, first_time, use_dynamics, terminate_at_max_objects, schanged, invalid_objects_print_boolean
         cdef np.ndarray[np.float64_t, ndim=1] edge_reaction_rates
@@ -672,6 +672,9 @@ cdef class ReactionSystem(DASx):
         else:
             branch_factor = 0.0
 
+        if model_settings.tol_overall_branch_rxn_to_core != 0.0:
+            tol_overall_branch_rxn_to_core = model_settings.tol_overall_branch_rxn_to_core
+
         #if not pruning always terminate at max objects, otherwise only do so if terminate_at_max_objects=True
         terminate_at_max_objects = True if not prune else model_settings.terminate_at_max_objects
 
@@ -700,6 +703,8 @@ cdef class ReactionSystem(DASx):
         # with and without a given reaction for products and reactants
         total_div_accum_nums = None
         branching_nums = None
+        edge_radical_consumption = None
+        edge_radical_production = None
 
         invalid_objects = []
         new_surface_reactions = []
@@ -878,6 +883,11 @@ cdef class ReactionSystem(DASx):
                 # Calculation of branching numbers for edge reactions#
                 ######################################################
                 branching_nums = np.zeros(num_edge_reactions)
+                edge_radical_consumption = np.zeros(num_edge_reactions) 
+                edge_radical_production = np.zeros(num_edge_reactions)
+                overall_core_radical_production = 0
+                overall_core_radical_consumption = 0
+
                 for index in range(num_edge_reactions):
                     reaction_rate = edge_reaction_rates[index]
 
@@ -894,6 +904,7 @@ cdef class ReactionSystem(DASx):
                             continue
                         elif i < num_core_species:
                             mults.append(core_species[i].molecule[0].multiplicity)
+                            edge_radical_production[index] = abs(reaction_rate)
                         else:
                             mults.append(edge_species[i - num_core_species].molecule[0].multiplicity)
 
@@ -905,6 +916,7 @@ cdef class ReactionSystem(DASx):
                             if core_species[spc_index].molecule[0].multiplicity != 2:
                                 continue
                             consumption = core_species_consumption_rates[spc_index]
+                            edge_radical_consumption[index] = abs(reaction_rate)
                             if consumption != 0:  #if consumption = 0 ignore species
                                 br = reaction_rate / consumption
                                 rr = core_species_rate_ratios[spc_index]
@@ -913,6 +925,11 @@ cdef class ReactionSystem(DASx):
                                 b_num = branch_factor * br * rr ** branching_index
                                 if b_num > branching_nums[index]:
                                     branching_nums[index] = b_num
+
+                for index in range(num_core_species):
+                    if core_species[index].molecule[0].multiplicity == 2:
+                        overall_core_radical_production += core_species_production_rates[index]
+                        overall_core_radical_consumption += core_species_consumption_rates[index]
 
             if use_dynamics and not first_time and self.t >= dynamics_time_scale:
                 #######################################################
@@ -1119,6 +1136,54 @@ cdef class ReactionSystem(DASx):
                 temp_new_object_vals = []
                 temp_new_object_type = []
 
+                if tol_overall_branch_rxn_to_core != 0.0:
+                    for obj in invalid_objects + new_objects:
+                        if isinstance(obj,Reaction):
+                            try:
+                                index = edge_reactions.index(obj)
+                                overall_core_radical_consumption += edge_radical_consumption[index - num_core_reactions - 1]
+                                edge_radical_consumption[index] = 0
+                                overall_core_radical_production += edge_radical_production[index - num_core_reactions - 1]
+                                edge_radical_production[index] = 0
+                            except IndexError:
+                                print("IndexError")
+                                print(invalid_objects)
+                                print(new_objects)
+                                print(obj)
+                                print(index)
+                                print(num_core_reactions)
+                                print(len(edge_radical_consumption))
+                                raise IndexError
+
+                    sorted_inds = np.argsort(np.array(edge_radical_consumption)).tolist()[::-1]
+                    for ind in sorted_inds:
+                        if sum(edge_radical_consumption)/overall_core_radical_consumption > tol_overall_branch_rxn_to_core:
+                            obj = edge_reactions[ind]
+                            if not (obj in new_objects or obj in invalid_objects):
+                                new_objects.append(edge_reactions[ind])
+                                new_object_inds.append(ind)
+                                new_object_vals.append(sum(edge_radical_consumption)/overall_core_radical_consumption)
+                                new_object_type.append('overallconsumption')
+                                overall_core_radical_consumption += edge_radical_consumption[ind]
+                                edge_radical_consumption[ind] = 0
+                        else:
+                            break
+
+
+                    sorted_inds = np.argsort(np.array(edge_radical_production)).tolist()[::-1]
+                    for ind in sorted_inds:
+                        if sum(edge_radical_production)/overall_core_radical_production > tol_overall_branch_rxn_to_core:
+                            obj = edge_reactions[ind]
+                            if not (obj in new_objects or obj in invalid_objects):
+                                new_objects.append(edge_reactions[ind])
+                                new_object_inds.append(ind)
+                                new_object_vals.append(sum(edge_radical_production)/overall_core_radical_production)
+                                new_object_type.append('overallproduction')
+                                overall_core_radical_production += edge_radical_production[ind]
+                                edge_radical_production[ind] = 0
+                        else:
+                            break
+
             if use_dynamics and not first_time and self.t >= dynamics_time_scale:
                 #movement of reactions to core/surface based on dynamics number  
                 valid_layering_indices = self.valid_layering_indices
@@ -1229,6 +1294,12 @@ cdef class ReactionSystem(DASx):
                         elif new_object_type[i] == 'branching':
                             logging.info('At time {0:10.4e} s, Reaction {1} at a branching number of {2} exceeded the '
                                          'threshold of 1 for moving to model core'.format(self.t, obj, val))
+                        elif new_object_type[i] == 'overallconsumption':
+                            logging.info('At time {0:10.4e} s, Reaction {1} at a consumption ratio of {2} exceeded the '
+                                         'threshold of {3} for moving to model core'.format(self.t, obj, val, tol_overall_branch_rxn_to_core))
+                        elif new_object_type[i] == 'overallproduction':
+                            logging.info('At time {0:10.4e} s, Reaction {1} at a production ratio of {2} exceeded the '
+                                         'threshold of {3} for moving to model core'.format(self.t, obj, val, tol_overall_branch_rxn_to_core))
                     else:
                         logging.info('At time {0:10.4e} s, PDepNetwork #{1:d} at {2} exceeded the minimum rate for '
                                      'exploring of {3}'.format(self.t, obj.index, val, tol_move_to_core))
