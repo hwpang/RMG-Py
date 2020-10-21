@@ -41,7 +41,8 @@ cimport rmgpy.constants as constants
 from rmgpy.quantity import Quantity
 from rmgpy.quantity cimport ScalarQuantity, ArrayQuantity
 from rmgpy.solver.base cimport ReactionSystem
-
+from rmgpy.kinetics.diffusionLimited import diffusion_limiter
+from CoolProp.CoolProp import PropsSI
 
 cdef class LiquidReactor(ReactionSystem):
     """
@@ -66,8 +67,12 @@ cdef class LiquidReactor(ReactionSystem):
     cdef public double residence_time # for cstr
     cdef public double v_in # for semi-batch
     cdef public double V_0 # for semi-batch
+    cdef public double P_vap
+    cdef public dict vapor_mole_fractions # vapor phase mole fractions
+    cdef public dict liquid_gas_mass_transfer_power_law_model
+    cdef public bint liquid_gas_mass_transfer
 
-    def __init__(self, T, initial_concentrations, residence_time=None, v_in=None, inlet_concentrations=None, V_0=None, n_sims=1, termination=None, sensitive_species=None,
+    def __init__(self, T, initial_concentrations, P_vap=None, vapor_mole_fractions=None, liquid_gas_mass_transfer_power_law_model=None, residence_time=None, v_in=None, inlet_concentrations=None, V_0=None, n_sims=1, termination=None, sensitive_species=None,
                  sensitivity_threshold=1e-3, sens_conditions=None, const_spc_names=None):
 
         ReactionSystem.__init__(self, termination, sensitive_species, sensitivity_threshold)
@@ -86,6 +91,17 @@ cdef class LiquidReactor(ReactionSystem):
         self.v_in = -1.0
         self.V_0 = -1.0
         self.inlet_concentrations = {}
+        self.P_vap=-1.0
+        self.vapor_mole_fractions={}
+        self.liquid_gas_mass_transfer_power_law_model = {}
+        self.liquid_gas_mass_transfer = False
+
+        #interfacial_mass_transfer and condensation from vapor phase
+        if P_vap and liquid_gas_mass_transfer_power_law_model and vapor_mole_fractions:
+            self.P_vap = P_vap
+            self.liquid_gas_mass_transfer_power_law_model = liquid_gas_mass_transfer_power_law_model
+            self.vapor_mole_fractions = vapor_mole_fractions
+            self.liquid_gas_mass_transfer = True
         
         # CSTR
         if residence_time:
@@ -122,6 +138,12 @@ cdef class LiquidReactor(ReactionSystem):
             for label, conc in self.inlet_concentrations.items():
                 inlet_concentrations[species_dict[label]] = conc
             self.inlet_concentrations = inlet_concentrations
+
+        vapor_mole_fractions = {}
+        if self.vapor_mole_fractions:
+            for label, mol_frac in self.vapor_mole_fractions.items():
+                vapor_mole_fractions[species_dict[label]] = mol_frac
+            self.vapor_mole_fractions = vapor_mole_fractions
 
         conditions = {}
         if self.sens_conditions is not None:
@@ -172,6 +194,7 @@ cdef class LiquidReactor(ReactionSystem):
 
         # Generate forward and reverse rate coefficients k(T,P)
         self.generate_rate_coefficients(core_reactions, edge_reactions)
+        self.generate_liquid_gas_mass_transfer_power_law_model_coefficients(core_species)
 
         ReactionSystem.compute_network_variables(self, pdep_networks)
 
@@ -193,6 +216,19 @@ cdef class LiquidReactor(ReactionSystem):
             if rxn.reversible:
                 self.Keq[j] = rxn.get_equilibrium_constant(self.T.value_si)
                 self.kb[j] = self.kf[j] / self.Keq[j]
+
+    def generate_liquid_gas_mass_transfer_power_law_model_coefficients(self, core_species):
+        """
+        Populates the self.kLA and self.kH to compute interfacial_mass_transfer rate
+        """
+        p = self.liquid_gas_mass_transfer_power_law_model.get("prefactor",0)
+        d = self.liquid_gas_mass_transfer_power_law_model.get("diffusionCoefficientPower",0)
+        v = self.liquid_gas_mass_transfer_power_law_model.get("solventViscosityPower",0)
+        r = self.liquid_gas_mass_transfer_power_law_model.get("solventDensityPower",0)
+        for spec in core_species:
+            i = self.get_species_index(spec)
+            self.kLA[i] = p * spec.get_diffusion_coefficient(self.T.value_si)**d * diffusion_limiter.get_solvent_viscosity(self.T.value_si)**v * diffusion_limiter.get_solvent_density(self.T.value_si)**r
+            self.kH[i] = spec.get_henry_law_constant(self.T.value_si) 
 
     def get_threshold_rate_constants(self, model_settings):
         """
@@ -243,6 +279,12 @@ cdef class LiquidReactor(ReactionSystem):
                 i = self.get_species_index(spec)
                 self.inlet_species_concentrations[i] = conc
             self.num_inlet_species = len(self.inlet_species_concentrations)            
+
+        if self.liquid_gas_mass_transfer:
+            for spec, mol_frac in self.vapor_mole_fractions.items():
+                i = self.get_species_index(spec)
+                self.vapor_species_mole_fractions[i] = mol_frac
+            self.num_vapor_species = len(self.vapor_species_mole_fractions)
 
         if not self.constant_volume:
             V = self.V_0
@@ -316,6 +358,9 @@ cdef class LiquidReactor(ReactionSystem):
         if (self.residence_time != -1.0) or (not self.constant_volume):
             for j in range(self.num_inlet_species):
                 C_in[j] = self.inlet_species_concentrations[j]
+
+        if self.liquid_gas_mass_transfer:
+            net_interfacial_mass_transfer_fluxes = self.kLA*(C-self.P_vap*self.vapor_species_mole_fractions/(constants.R*self.T.value_si)/self.kH)
 
         for j in range(ir.shape[0]):
             k = kf[j]
@@ -434,6 +479,10 @@ cdef class LiquidReactor(ReactionSystem):
             res = self.v_in * C_in + core_species_rates * V
         else:
             res = core_species_rates * V
+
+        if self.liquid_gas_mass_transfer:
+            res -= net_interfacial_mass_transfer_fluxes * V
+
 
         if self.sensitivity:
             delta = np.zeros(len(y), np.float64)
@@ -820,6 +869,8 @@ cdef class LiquidReactor(ReactionSystem):
         if self.residence_time != -1.0:
             pd -= 1/self.residence_time * np.identity(num_core_species, np.float64)
 
+        if self.liquid_gas_mass_transfer:
+            pd -= self.kLA * np.identity(num_core_species, np.float64)
         self.jacobian_matrix = pd + cj * np.identity(num_core_species, np.float64)
 
         return pd

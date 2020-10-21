@@ -75,6 +75,7 @@ cdef class ReactionSystem(DASx):
         #  variables that determine the dimensions of arrays and matrices:
         self.num_core_species = -1
         self.num_inlet_species = -1
+        self.num_vapor_species = -1
         self.num_core_reactions = -1
         self.num_edge_species = -1
         self.num_edge_reactions = -1
@@ -126,12 +127,15 @@ cdef class ReactionSystem(DASx):
         self.Keq = None  # equilibrium constants
         self.network_leak_coefficients = None
         self.jacobian_matrix = None
-        
+        self.kLA = None
+        self.kH = None
+
         self.mww = None
         self.mww = None
         self.mww_network = None
         self.core_species_concentrations = None
         self.inlet_species_concentrations = None
+        self.vapor_species_mole_fractions = None
 
         # The reaction and species rates at the current time (in mol/m^3*s)
         self.core_species_rates = None
@@ -245,12 +249,16 @@ cdef class ReactionSystem(DASx):
         self.kb = np.zeros_like(self.kf)
         self.Keq = np.zeros_like(self.kf)
 
+        self.kLA = np.zeros((self.num_core_species), np.float64)
+        self.kH = np.zeros((self.num_core_species), np.float64)
+
         self.generate_species_indices(core_species, edge_species)
         self.generate_reaction_indices(core_reactions, edge_reactions)
         self.generate_reactant_product_indices(core_reactions, edge_reactions)
 
         self.core_species_concentrations = np.zeros((self.num_core_species), np.float64)
         self.inlet_species_concentrations = np.zeros((self.num_core_species), np.float64)
+        self.vapor_species_mole_fractions = np.zeros((self.num_core_species), np.float64)
         self.core_species_production_rates = np.zeros((self.num_core_species), np.float64)
         self.core_species_consumption_rates = np.zeros((self.num_core_species), np.float64)
         self.core_reaction_rates = np.zeros((self.num_core_reactions), np.float64)
@@ -612,7 +620,7 @@ cdef class ReactionSystem(DASx):
         cdef np.float64_t conversion
         cdef np.ndarray[np.float64_t, ndim=1] surface_species_production, surface_species_consumption, branching_nums
         cdef np.ndarray[np.float64_t, ndim=1] surface_total_div_accum_nums, surface_species_rate_ratios
-        cdef np.ndarray[np.float64_t, ndim=1] forward_rate_coefficients, core_species_concentrations, inlet_species_concentrations
+        cdef np.ndarray[np.float64_t, ndim=1] forward_rate_coefficients, core_species_concentrations 
         cdef double prev_time, total_moles, c, volume, RTP, max_char_rate, br, rr
         cdef double unimolecular_threshold_val, bimolecular_threshold_val, trimolecular_threshold_val
         cdef bool useDynamicsTemp, first_time, use_dynamics, terminate_at_max_objects, schanged, invalid_objects_print_boolean
