@@ -1159,7 +1159,7 @@ cdef class ReactionSystem(DASx):
                     for ind in sorted_inds:
                         if sum(edge_radical_consumption)/overall_core_radical_consumption > tol_overall_branch_rxn_to_core:
                             obj = edge_reactions[ind]
-                            if not (obj in new_objects or obj in invalid_objects):
+                            if not (obj in new_objects or obj in invalid_objects) and obj.family not in ["R_Addition_MultipleBond", "Intra_R_Add_Endocyclic", "R_Recombination"]:
                                 new_objects.append(edge_reactions[ind])
                                 new_object_inds.append(ind)
                                 new_object_vals.append(sum(edge_radical_consumption)/overall_core_radical_consumption)
@@ -1174,7 +1174,7 @@ cdef class ReactionSystem(DASx):
                     for ind in sorted_inds:
                         if sum(edge_radical_production)/overall_core_radical_production > tol_overall_branch_rxn_to_core:
                             obj = edge_reactions[ind]
-                            if not (obj in new_objects or obj in invalid_objects):
+                            if not (obj in new_objects or obj in invalid_objects) and obj.family not in ["R_Addition_MultipleBond", "Intra_R_Add_Endocyclic", "R_Recombination"]:
                                 new_objects.append(edge_reactions[ind])
                                 new_object_inds.append(ind)
                                 new_object_vals.append(sum(edge_radical_production)/overall_core_radical_production)
