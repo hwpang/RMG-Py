@@ -1155,9 +1155,12 @@ cdef class ReactionSystem(DASx):
                                 print(len(edge_radical_consumption))
                                 raise IndexError
 
-                    sorted_inds = np.argsort(np.array(edge_radical_consumption)).tolist()[::-1]
-                    for ind in sorted_inds:
-                        if sum(edge_radical_consumption)/overall_core_radical_consumption > tol_overall_branch_rxn_to_core:
+                    if sum(edge_radical_consumption)/overall_core_radical_consumption > tol_overall_branch_rxn_to_core:
+                        sorted_inds = np.argsort(np.array(edge_radical_consumption)).tolist()[::-1]
+                        added = False
+                        for ind in sorted_inds:
+                            if added:
+                                break
                             obj = edge_reactions[ind]
                             if not (obj in new_objects or obj in invalid_objects) and obj.family in ["H_Abstraction"]:
                                 new_objects.append(edge_reactions[ind])
@@ -1166,13 +1169,14 @@ cdef class ReactionSystem(DASx):
                                 new_object_type.append('overallconsumption')
                                 overall_core_radical_consumption += edge_radical_consumption[ind]
                                 edge_radical_consumption[ind] = 0
-                        else:
-                            break
+                                added = True
 
-
-                    sorted_inds = np.argsort(np.array(edge_radical_production)).tolist()[::-1]
-                    for ind in sorted_inds:
-                        if sum(edge_radical_production)/overall_core_radical_production > tol_overall_branch_rxn_to_core:
+                    if sum(edge_radical_production)/overall_core_radical_production > tol_overall_branch_rxn_to_core:
+                        sorted_inds = np.argsort(np.array(edge_radical_production)).tolist()[::-1]
+                        added = False
+                        for ind in sorted_inds:
+                            if added:
+                                break
                             obj = edge_reactions[ind]
                             if not (obj in new_objects or obj in invalid_objects) and obj.family in ["H_Abstraction"]:
                                 new_objects.append(edge_reactions[ind])
@@ -1181,8 +1185,7 @@ cdef class ReactionSystem(DASx):
                                 new_object_type.append('overallproduction')
                                 overall_core_radical_production += edge_radical_production[ind]
                                 edge_radical_production[ind] = 0
-                        else:
-                            break
+                                added = True
 
             if use_dynamics and not first_time and self.t >= dynamics_time_scale:
                 #movement of reactions to core/surface based on dynamics number  
