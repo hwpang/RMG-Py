@@ -73,7 +73,8 @@ class ModelSettings(object):
                  ignore_overall_flux_criterion=False, max_num_species=None, max_num_objects_per_iter=1,
                  terminate_at_max_objects=False, thermo_tol_keep_spc_in_edge=np.inf,
                  dynamics_time_scale=Quantity((0.0, 'sec')),
-                 tol_branch_rxn_to_core=0.0, branching_index=0.5, branching_ratio_max=1.0, flux_basis='mole', mass_index=1.0):
+                 tol_branch_rxn_to_core=0.0, branching_index=0.5, branching_ratio_max=1.0, flux_basis='mole', mass_index=1.0,
+                 connect_max_rad=False):
 
         self.tol_keep_in_edge = tol_keep_in_edge
         self.tol_move_to_core = tol_move_to_core
@@ -94,6 +95,7 @@ class ModelSettings(object):
         self.tol_branch_rxn_to_core = tol_branch_rxn_to_core
         self.branching_index = branching_index
         self.branching_ratio_max = branching_ratio_max
+        self.connect_max_rad = connect_max_rad
 
         self.mass_index = mass_index
         if tol_interrupt_simulation:
