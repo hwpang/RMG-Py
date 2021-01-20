@@ -637,6 +637,7 @@ cdef class ReactionSystem(DASx):
         cdef np.ndarray[np.float64_t, ndim=1] mole_sens, dVdk, norm_sens
         cdef list time_array, norm_sens_array, new_surface_reactions, new_surface_reaction_inds, new_objects, new_object_inds
         cdef bool connect_max_rad
+        cdef list connected_max_rad_inds
         cdef int max_radical_ind
         cdef np.ndarray[np.float64_t, ndim=1] connect_max_rad_rates
         cdef bool connect_deadend
@@ -684,6 +685,7 @@ cdef class ReactionSystem(DASx):
             branch_factor = 0.0
 
         connect_max_rad = model_settings.connect_max_rad
+        connected_max_rad_inds = []
         connect_deadend = model_settings.connect_deadend
 
         #if not pruning always terminate at max objects, otherwise only do so if terminate_at_max_objects=True
@@ -973,10 +975,11 @@ cdef class ReactionSystem(DASx):
                 max_radical_ind = -1
 
                 for ind in sorted_inds:
+                    if core_species_concentrations[ind] == 0.0:
+                        break
                     spec = core_species[ind]
-                    if spec.molecule[0].multiplicity == 2 and spec.reactive:
-                        if core_species_concentrations[ind] != 0.0:
-                            max_radical_ind = ind
+                    if spec.molecule[0].multiplicity == 2 and spec.reactive and ind not in connected_max_rad_inds:
+                        max_radical_ind = ind
                         break
 
                 connect_max_rad_rates = np.zeros(num_edge_reactions)
@@ -1002,7 +1005,8 @@ cdef class ReactionSystem(DASx):
 
                             if max_radical_ind in reactant_side:
                                 connect_max_rad_rates[index] = abs(reaction_rate)
-                                logging.info(f"Max radical: {core_species[max_radical_ind]} with conc: {core_species_concentrations[max_radical_ind]:10.4e}")
+                                connected_max_rad_inds.append(max_radical_ind)
+                                logging.info(f"Identify max radical: {core_species[max_radical_ind]} with conc: {core_species_concentrations[max_radical_ind]:10.4e}")
                                 break
 
             if use_dynamics and not first_time and self.t >= dynamics_time_scale:
