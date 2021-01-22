@@ -639,7 +639,7 @@ cdef class ReactionSystem(DASx):
         cdef bool connect_max_rad
         cdef list connected_max_rad_inds
         cdef int max_radical_ind
-        cdef np.ndarray[np.float64_t, ndim=1] connect_max_rad_rates
+        cdef np.ndarray[np.float64_t, ndim=1] connect_max_rad_ratios
         cdef bool connect_deadend
         cdef list deadend_index
         cdef np.ndarray[np.float64_t, ndim=1] connect_deadend_rate
@@ -716,7 +716,7 @@ cdef class ReactionSystem(DASx):
         # with and without a given reaction for products and reactants
         total_div_accum_nums = None
         branching_nums = None
-        connect_max_rad_rates = None
+        connect_max_rad_ratios = None
 
         invalid_objects = []
         new_surface_reactions = []
@@ -982,7 +982,7 @@ cdef class ReactionSystem(DASx):
                         max_radical_ind = ind
                         break
 
-                connect_max_rad_rates = np.zeros(num_edge_reactions)
+                connect_max_rad_ratios = np.zeros(num_edge_reactions)
 
                 if max_radical_ind != -1:
 
@@ -1004,10 +1004,13 @@ cdef class ReactionSystem(DASx):
                                 product_side = self.reactant_indices[index + num_core_reactions, :]
 
                             if max_radical_ind in reactant_side:
-                                connect_max_rad_rates[index] = abs(reaction_rate)
-                                connected_max_rad_inds.append(max_radical_ind)
-                                logging.info(f"Identify max radical: {core_species[max_radical_ind]} with conc: {core_species_concentrations[max_radical_ind]:10.4e}")
-                                break
+                                net_L = core_species_net_consumption_rates[max_radical_ind]
+                                if net_L != 0.0:
+                                    connect_max_rad_ratios[index] = abs(reaction_rate)/net_L
+                                    connected_max_rad_inds.append(max_radical_ind)
+                                    logging.info(f"Identify max radical: {core_species[max_radical_ind]} with conc: {core_species_concentrations[max_radical_ind]:10.4e}")
+                                    logging.info(f"Identify connectin reaction: {reaction} with connecting ratio: {connect_max_rad_ratios[index]:10.4e}")
+                                    break
 
             if use_dynamics and not first_time and self.t >= dynamics_time_scale:
                 #######################################################
@@ -1243,17 +1246,17 @@ cdef class ReactionSystem(DASx):
                 temp_new_object_type = []
 
             if connect_max_rad and not first_time:
-                sorted_inds = np.argsort(connect_max_rad_rates).tolist()[::-1]
+                sorted_inds = np.argsort(connect_max_rad_ratios).tolist()[::-1]
                 for ind in sorted_inds:
                     obj = edge_reactions[ind]
-                    c_rate = connect_max_rad_rates[ind]
+                    c_ratio = connect_max_rad_ratios[ind]
 
                     if not (obj in new_objects or obj in invalid_objects):
-                        if c_rate != 0.0:
-                            logging.info(f"Connect max radical {core_species[max_radical_ind]} with reaction {obj} with rate {c_rate:10.4e}")
+                        if c_ratio > tol_move_to_core:
+                            logging.info(f"Connect max radical {core_species[max_radical_ind]} with reaction {obj} with ratio {c_ratio:10.4e}")
                             temp_new_objects.append(edge_reactions[ind])
                             temp_new_object_inds.append(ind)
-                            temp_new_object_vals.append(c_rate)
+                            temp_new_object_vals.append(c_ratio)
                             temp_new_object_type.append('connecting')
                         break
 
@@ -1380,8 +1383,8 @@ cdef class ReactionSystem(DASx):
                             logging.info('At time {0:10.4e} s, Reaction {1} at a branching number of {2} exceeded the '
                                          'threshold of 1 for moving to model core'.format(self.t, obj, val))
                         elif new_object_type[i] == 'connecting':
-                            logging.info('At time {0:10.4e} s, Reaction {1} at a rate of {2} moved to model core '
-                                         'to connect the max radical'.format(self.t, obj, val))
+                            logging.info('At time {0:10.4e} s, Reaction {1} at a loss ratio of {2} exceeded the '
+                                         'threshold of {3} for moving to model core'.format(self.t, obj, val, tol_move_to_core))
                         elif new_object_type[i] == 'deadend':
                             logging.info('At time {0:10.4e} s, Reaction {1} at a rate of {2} moved to model core'
                                          'to connect deadend radicals'.format(self.t, obj, val))
