@@ -637,8 +637,7 @@ cdef class ReactionSystem(DASx):
         cdef np.ndarray[np.float64_t, ndim=1] mole_sens, dVdk, norm_sens
         cdef list time_array, norm_sens_array, new_surface_reactions, new_surface_reaction_inds, new_objects, new_object_inds
         cdef bool connect_max_rad
-        cdef list connected_max_rad_inds
-        cdef int max_radical_ind
+        cdef list max_radical_inds
         cdef np.ndarray[np.float64_t, ndim=1] connect_max_rad_ratios
         cdef bool connect_deadend
         cdef list deadend_index
@@ -685,7 +684,6 @@ cdef class ReactionSystem(DASx):
             branch_factor = 0.0
 
         connect_max_rad = model_settings.connect_max_rad
-        connected_max_rad_inds = []
         connect_deadend = model_settings.connect_deadend
 
         #if not pruning always terminate at max objects, otherwise only do so if terminate_at_max_objects=True
@@ -972,19 +970,18 @@ cdef class ReactionSystem(DASx):
             if connect_max_rad and not first_time:
 
                 sorted_inds = np.argsort(core_species_concentrations).tolist()[::-1]
-                max_radical_ind = -1
+                max_radical_inds = []
 
                 for ind in sorted_inds:
                     if core_species_concentrations[ind] == 0.0:
                         break
                     spec = core_species[ind]
-                    if spec.molecule[0].multiplicity == 2 and spec.reactive and ind not in connected_max_rad_inds:
-                        max_radical_ind = ind
-                        break
+                    if spec.molecule[0].multiplicity == 2 and spec.reactive:
+                        max_radical_inds.append(ind)
 
                 connect_max_rad_ratios = np.zeros(num_edge_reactions)
 
-                if max_radical_ind != -1:
+                if max_radical_inds:
 
                     sorted_inds = np.argsort(np.abs(edge_reaction_rates)).tolist()[::-1]
                     for index in sorted_inds:
@@ -1003,14 +1000,16 @@ cdef class ReactionSystem(DASx):
                                 reactant_side = self.product_indices[index + num_core_reactions, :]
                                 product_side = self.reactant_indices[index + num_core_reactions, :]
 
-                            if max_radical_ind in reactant_side:
-                                net_L = core_species_net_consumption_rates[max_radical_ind]
-                                if net_L != 0.0:
-                                    connect_max_rad_ratios[index] = abs(reaction_rate)/net_L
-                                    connected_max_rad_inds.append(max_radical_ind)
-                                    logging.info(f"Identify max radical: {core_species[max_radical_ind]} with conc: {core_species_concentrations[max_radical_ind]:10.4e}")
-                                    logging.info(f"Identify connectin reaction: {reaction} with connecting ratio: {connect_max_rad_ratios[index]:10.4e}")
-                                    break
+                            for reactant_ind in reactant_side:
+                                if reactant_ind in max_radical_inds:
+                                    net_L = core_species_net_consumption_rates[reactant_ind]
+                                    if net_L != 0.0:
+                                        loss_ratio = abs(reaction_rate)/net_L
+                                        if connect_max_rad_ratios[index] < loss_ratio:
+                                            connect_max_rad_ratios[index] = loss_ratio
+                                        max_radical_inds.remove(reactant_ind)
+                                        logging.info(f"Identify max radical: {core_species[reactant_ind]} with conc: {core_species_concentrations[reactant_ind]:10.4e}")
+                                        logging.info(f"Identify connectin reaction: {reaction} with connecting ratio: {connect_max_rad_ratios[index]:10.4e}")
 
             if use_dynamics and not first_time and self.t >= dynamics_time_scale:
                 #######################################################
@@ -1251,14 +1250,13 @@ cdef class ReactionSystem(DASx):
                     obj = edge_reactions[ind]
                     c_ratio = connect_max_rad_ratios[ind]
 
-                    if not (obj in new_objects or obj in invalid_objects):
-                        if c_ratio > tol_move_to_core:
-                            logging.info(f"Connect max radical {core_species[max_radical_ind]} with reaction {obj} with ratio {c_ratio:10.4e}")
+                    if c_ratio > tol_move_to_core:
+                        if not (obj in new_objects or obj in invalid_objects):
+                            logging.info(f"Connect max radical with reaction {obj} with ratio {c_ratio:10.4e}")
                             temp_new_objects.append(edge_reactions[ind])
                             temp_new_object_inds.append(ind)
                             temp_new_object_vals.append(c_ratio)
                             temp_new_object_type.append('connecting')
-                        break
 
                 sorted_inds = np.argsort(np.array(temp_new_object_vals)).tolist()[::-1]
 
