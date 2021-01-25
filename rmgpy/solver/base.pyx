@@ -636,8 +636,8 @@ cdef class ReactionSystem(DASx):
         cdef np.ndarray[np.int_t, ndim=1] sens_species_indices, reactant_side, product_side
         cdef np.ndarray[np.float64_t, ndim=1] mole_sens, dVdk, norm_sens
         cdef list time_array, norm_sens_array, new_surface_reactions, new_surface_reaction_inds, new_objects, new_object_inds
-        cdef bool connect_max_rad
-        cdef np.ndarray[np.float64_t, ndim=1] connect_max_rad_ratios
+        cdef double tol_connect_radical
+        cdef np.ndarray[np.float64_t, ndim=1] connect_rad_ratios
         cdef bool connect_deadend
         cdef list deadend_index
         cdef np.ndarray[np.float64_t, ndim=1] connect_deadend_rate
@@ -682,7 +682,7 @@ cdef class ReactionSystem(DASx):
         else:
             branch_factor = 0.0
 
-        connect_max_rad = model_settings.connect_max_rad
+        tol_connect_radical = model_settings.tol_connect_radical
         connect_deadend = model_settings.connect_deadend
 
         #if not pruning always terminate at max objects, otherwise only do so if terminate_at_max_objects=True
@@ -713,7 +713,7 @@ cdef class ReactionSystem(DASx):
         # with and without a given reaction for products and reactants
         total_div_accum_nums = None
         branching_nums = None
-        connect_max_rad_ratios = None
+        connect_rad_ratios = None
 
         invalid_objects = []
         new_surface_reactions = []
@@ -966,9 +966,9 @@ cdef class ReactionSystem(DASx):
                                 if b_num > branching_nums[index]:
                                     branching_nums[index] = b_num
 
-            if connect_max_rad and not first_time:
+            if tol_connect_radical != 0.0 and not first_time:
 
-                connect_max_rad_ratios = np.zeros(num_edge_reactions) 
+                connect_rad_ratios = np.zeros(num_edge_reactions) 
 
                 for index in range(num_edge_reactions):
                     reaction = edge_reactions[index]
@@ -990,10 +990,10 @@ cdef class ReactionSystem(DASx):
                                 net_L = core_species_net_consumption_rates[spc_index]
                                 if net_L != 0.0:
                                     loss_ratio = abs(reaction_rate)/net_L
-                                    if connect_max_rad_ratios[index] < loss_ratio:
-                                        connect_max_rad_ratios[index] = loss_ratio
+                                    if connect_rad_ratios[index] < loss_ratio:
+                                        connect_rad_ratios[index] = loss_ratio
                                     logging.info(f"Identify radical: {core_species[spc_index]} with conc: {core_species_concentrations[spc_index]:10.4e}")
-                                    logging.info(f"Identify connectin reaction: {reaction} with connecting ratio: {connect_max_rad_ratios[index]:10.4e}")
+                                    logging.info(f"Identify connectin reaction: {reaction} with connecting ratio: {connect_rad_ratios[index]:10.4e}")
 
             if use_dynamics and not first_time and self.t >= dynamics_time_scale:
                 #######################################################
@@ -1228,12 +1228,11 @@ cdef class ReactionSystem(DASx):
                 temp_new_object_vals = []
                 temp_new_object_type = []
 
-            if connect_max_rad and not first_time:
+            if tol_connect_radical != 0.0 and not first_time:
                 for ind, obj in enumerate(edge_reactions):
-                    obj = edge_reactions[ind]
-                    c_ratio = connect_max_rad_ratios[ind]
+                    c_ratio = connect_rad_ratios[ind]
 
-                    if c_ratio > tol_move_to_core:
+                    if c_ratio > tol_connect_radical:
                         if not (obj in new_objects or obj in invalid_objects):
                             logging.info(f"Connect max radical with reaction {obj} with ratio {c_ratio:10.4e}")
                             temp_new_objects.append(edge_reactions[ind])
