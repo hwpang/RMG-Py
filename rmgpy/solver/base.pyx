@@ -1229,7 +1229,6 @@ cdef class ReactionSystem(DASx):
                 temp_new_object_vals = []
                 temp_new_object_type = [] 
 
-
             if branch_factor != 0.0 and not first_time:
                 #movement of reactions to core based on branching number
                 for ind, obj in enumerate(edge_reactions):
