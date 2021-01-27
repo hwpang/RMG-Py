@@ -1205,29 +1205,6 @@ cdef class ReactionSystem(DASx):
                 temp_new_object_vals = []
                 temp_new_object_type = []
 
-            if branch_factor != 0.0 and not first_time:
-                #movement of reactions to core based on branching number
-                for ind, obj in enumerate(edge_reactions):
-                    b_num = branching_nums[ind]
-                    if b_num > 1:
-                        if not (obj in new_objects or obj in invalid_objects):
-                            temp_new_objects.append(edge_reactions[ind])
-                            temp_new_object_inds.append(ind)
-                            temp_new_object_vals.append(b_num)
-                            temp_new_object_type.append('branching')
-
-                sorted_inds = np.argsort(np.array(temp_new_object_vals)).tolist()[::-1]
-
-                new_objects.extend([temp_new_objects[q] for q in sorted_inds])
-                new_object_inds.extend([temp_new_object_inds[q] for q in sorted_inds])
-                new_object_vals.extend([temp_new_object_vals[q] for q in sorted_inds])
-                new_object_type.extend([temp_new_object_type[q] for q in sorted_inds])
-
-                temp_new_objects = []
-                temp_new_object_inds = []
-                temp_new_object_vals = []
-                temp_new_object_type = []
-
             if tol_connect_radical != 0.0 and not first_time:
                 for ind, obj in enumerate(edge_reactions):
                     c_ratio = connect_rad_ratios[ind]
@@ -1251,6 +1228,30 @@ cdef class ReactionSystem(DASx):
                 temp_new_object_inds = []
                 temp_new_object_vals = []
                 temp_new_object_type = [] 
+
+
+            if branch_factor != 0.0 and not first_time:
+                #movement of reactions to core based on branching number
+                for ind, obj in enumerate(edge_reactions):
+                    b_num = branching_nums[ind]
+                    if b_num > 1:
+                        if not (obj in new_objects or obj in invalid_objects):
+                            temp_new_objects.append(edge_reactions[ind])
+                            temp_new_object_inds.append(ind)
+                            temp_new_object_vals.append(b_num)
+                            temp_new_object_type.append('branching')
+
+                sorted_inds = np.argsort(np.array(temp_new_object_vals)).tolist()[::-1]
+
+                new_objects.extend([temp_new_objects[q] for q in sorted_inds])
+                new_object_inds.extend([temp_new_object_inds[q] for q in sorted_inds])
+                new_object_vals.extend([temp_new_object_vals[q] for q in sorted_inds])
+                new_object_type.extend([temp_new_object_type[q] for q in sorted_inds])
+
+                temp_new_objects = []
+                temp_new_object_inds = []
+                temp_new_object_vals = []
+                temp_new_object_type = []
 
             if use_dynamics and not first_time and self.t >= dynamics_time_scale:
                 #movement of reactions to core/surface based on dynamics number  
