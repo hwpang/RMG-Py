@@ -1199,9 +1199,9 @@ def save_input_file(path, rmg):
                 f.write('    inletConcentrations={\n')
                 for spcs, conc in system.inlet_concentrations.items():
                     f.write(f'        "{spcs.label!s}": ({conc:g},"mol/m^3"),\n')
-            if system.inlet_volumetric_flow_rate:
+            if system.v_in != -1:
                 f.write(f'    inletVolumetricFlowRate = ({system.v_in:g}, "m^3/s"),\n')
-            if system.initial_volume:
+            if system.V_0 != -1:
                 f.write(f'    initialVolume = ({system.V_0:g}, "m^3"),\n')
         else:
             f.write('simpleReactor(\n')
